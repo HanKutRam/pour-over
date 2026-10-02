@@ -67,6 +67,7 @@ th{font-family:"Bricolage Grotesque",sans-serif;font-weight:700}
 <h1>Pour-Over-Protokoll</h1>
 <p class="lead">Vom Stammrezept zum eigenen Rezept für jede Bohne. Ändere pro Versuch nur eine Stellschraube und halte fest, wie die Tasse schmeckt.</p>
 <nav role="tablist" id="nav"></nav>
+<p class="warn" id="imp" style="display:none" role="status"></p>
 <div id="view"></div>
 </main>
 <script>
@@ -118,6 +119,7 @@ function rows(){
   if(!L.length)return `<div class="empty">${S.beans.length?'Keine Bohne passt zu Suche und Filter.':'Noch keine Bohne im Register. Lege oben die erste an, sie startet mit deinem Stammrezept.'}</div>`;
   return L.map(({b,i})=>`<button class="reg" data-act="open:${i}"><span><b>${esc(b.name||'Ohne Namen')}</b><small>${esc([b.roaster,b.origin,b.roast].filter(Boolean).join(', '))}</small></span><span class="st ${fin(b)?'ok':''}">Pour Over: ${ms(b)}<br>French Press: ${ms(b.fp)}</span></button>`).join('')}
 function register(){return `<div class="card"><h2>Neue Bohne anlegen</h2><div class="grid"><label>Name<input id="nb-n"></label><label>Röster<input id="nb-r"></label></div><div class="row" style="margin-top:0"><button class="btn primary" data-act="addbean">Bohne anlegen</button></div><p class="meta" id="msg" aria-live="polite"></p></div>
+<div class="card noprint"><h3>Startrezept aus der Bohnen-App einfügen</h3><p class="meta">Normalerweise geschieht das automatisch über den Link der Bohnen-App. Falls nicht, hier den Link oder Code einfügen.</p><label>Link oder Code<textarea id="imp-t"></textarea></label><div class="row"><button class="btn primary" data-act="impaste">Eintragen</button></div></div>
 <h2>Bohnenregister (${S.beans.length})</h2><div class="grid"><label>Suchen<input id="q" type="search" value="${esc(S.q)}" placeholder="Name, Röster, Herkunft"></label><label>Anzeigen<select data-p="f">${opt('all','Alle',S.f)}${opt('work','In Arbeit',S.f)}${opt('done','Rezept fertig',S.f)}</select></label><label>Sortieren<select data-p="sort">${opt('name','Nach Name',S.sort)}${opt('date','Zuletzt benutzt',S.sort)}</select></label></div><div id="list" class="list">${rows()}</div>`}
 function detail(){
   const i=S.open,b=S.beans[i],p=`beans.${i}`,m=S.m=='fp'?'fp':'po',o=mb(i,m),n=k=>mb(i,k).brews.length;
@@ -162,6 +164,7 @@ document.addEventListener('click',e=>{
     const k=S.beans.findIndex(b=>norm(b.name)==norm(n)&&norm(b.roaster)==norm(ro));
     if(k>=0){m.innerHTML=`Diese Bohne gibt es schon: ${esc(S.beans[k].name)}. <button class="btn" data-act="open:${k}">Vorhandene Bohne öffnen</button>`;return}
     S.beans.push(newBean(n,ro));S.open=S.beans.length-1}
+  else if(act=='impaste'){banner(importCode(document.getElementById('imp-t').value).msg)}
   else if(act=='gm')S.gm=z;
   else if(act=='meth')S.m=z;
   else if(act=='newbrew'){const bs=mb(i,z).brews,fp=z=='fp';bs.push(fp?newFp(bs.length?bs[bs.length-1]:S.stammFp):newBrew(bs.length?bs[bs.length-1]:S.stamm))}
@@ -169,7 +172,25 @@ document.addEventListener('click',e=>{
   else if(act=='delbrew'){const b=mb(i,z);b.brews.splice(j,1);b.final=b.final===j?null:(b.final>j?b.final-1:b.final)}
   else if(act=='delbean'){if(del===i){S.beans.splice(i,1);S.open=-1;del=-1}else del=i}
   render()});
-render();
+function b64d(s){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";return new TextDecoder().decode(Uint8Array.from(atob(s),c=>c.charCodeAt(0)))}
+const cs=(v,n)=>String(v==null?"":v).slice(0,n||200);
+const cn=v=>{v=parseFloat(v);return isFinite(v)&&v>0&&v<5000?v:0};
+function impPo(x){x=x||{};let st=(Array.isArray(x.steps)?x.steps:[]).slice(0,8).map(q=>({t:cs(q&&q.t,10),g:cn(q&&q.g)})).filter(q=>q.g>0).sort((a,b)=>a.g-b.g);if(!st.length)st=JSON.parse(JSON.stringify(S.stamm.steps));return{date:today(),dose:cn(x.dose)||S.stamm.dose,clicks:cn(x.clicks)||S.stamm.clicks,temp:cn(x.temp)||S.stamm.temp,filter:["Kalita","V60","Abaca"].includes(x.filter)?x.filter:S.stamm.filter,time:cs(x.time,20)||S.stamm.time,steps:st,changed:cs(x.changed,300),r:{},note:cs(x.note,600)}}
+function impFp(x){x=x||{};return{date:today(),dose:cn(x.dose)||S.stammFp.dose,clicks:cn(x.clicks)||S.stammFp.clicks,temp:cn(x.temp)||S.stammFp.temp,water:cn(x.water)||S.stammFp.water,time:cs(x.time,20)||S.stammFp.time,plan:cs(x.plan,600)||S.stammFp.plan,changed:cs(x.changed,300),r:{},note:cs(x.note,600)}}
+function importCode(raw){
+  const m=String(raw||"").match(/neu=([A-Za-z0-9_-]+)/),code=m?m[1]:String(raw||"").trim();
+  let d;try{d=JSON.parse(b64d(code))}catch(e){return{msg:"Der Code ist ungültig. Bitte Link oder Code aus der Bohnen-App vollständig einfügen."}}
+  const b=(d&&d.bean)||{},n=cs(b.name,120).trim(),ro=cs(b.roaster,120).trim();
+  if(!n)return{msg:"Im Code fehlt der Bohnenname."};
+  const k=S.beans.findIndex(x=>norm(x.name)==norm(n)&&norm(x.roaster)==norm(ro));
+  if(k>=0){S.tab="register";S.open=k;return{msg:`„${n}“ steht schon im Register und wurde nicht doppelt angelegt.`}}
+  S.beans.push({name:n,roaster:ro,origin:cs(b.origin),variety:cs(b.variety),process:cs(b.process),roast:cs(b.roast),date:cs(b.date,20),notes:cs(b.notes,300),final:null,brews:[impPo(d.po)],fp:{brews:[impFp(d.fp)],final:null}});
+  S.tab="register";S.open=S.beans.length-1;S.m=d.rec=="fp"?"fp":"po";
+  return{msg:`„${n}“ ist im Bohnenregister eingetragen, mit Versuch 1 in beiden Versuchsreihen.`}}
+function banner(t){const e=document.getElementById("imp");if(e&&t){e.textContent=t;e.style.display=""}}
+let impMsg="";
+if(location.hash.indexOf("neu=")>=0){impMsg=importCode(location.hash).msg;try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}}
+render();banner(impMsg);
 </script>
 </body>
 </html>
